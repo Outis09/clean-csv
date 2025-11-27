@@ -1,0 +1,6 @@
+*.log
+logs/
+
+*.csv
+
+.DS_Store

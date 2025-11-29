@@ -59,7 +59,7 @@ if filepath.suffix != '.csv':
 # load csv into pandas dataframe
 try:
     print(f'Loading file from {abs_filepath} ...')
-    df = pd.read_csv(rf'{abs_filepath}')
+    df = pd.read_csv(abs_filepath)
     time.sleep(0.5)
     logger.info('Loaded file')
 except Exception as e:
@@ -71,24 +71,26 @@ if len(df) == 0:
     logger.error('The file has only columns but no rows.')
     sys.exit()
 
+# copy data to be used for cleaning
+cleanDF = df.copy()
 
 # data profiling
 print('\n')
 print('Data Profile')
 
 # get number of columns and rows
-cols,rows = df.shape
+rows,cols = cleanDF.shape
 logger.info(f'The data has {cols} columns and {rows} rows.')
 
 # check for duplicates
-duplicateCount = df.duplicated().sum()
+duplicateCount = cleanDF.duplicated().sum()
 logger.info(f'The data has {duplicateCount} duplicates.')
 
 # check for null
-# nullDf = df.isnull().sum()#.reset_index()
-# nullDf = pd.DataFrame(nullDf.reset_index()).rename(columns={'index':'columns', 0:'nulls'})
-# onlyNulls = nullDf[nullDf['nulls'] > 0]
-nullColumns = df.columns[df.isnull().any()].to_list()
+# nullcleanDF = cleanDF.isnull().sum()#.reset_index()
+# nullcleanDF = pd.DataFrame(nullcleanDF.reset_index()).rename(columns={'index':'columns', 0:'nulls'})
+# onlyNulls = nullcleanDF[nullcleanDF['nulls'] > 0]
+nullColumns = cleanDF.columns[cleanDF.isnull().any()].to_list()
 if len(nullColumns) == 0:
     logger.info('There are no nulls.')
 else:
@@ -106,14 +108,14 @@ def standardize_headers(headers):
 print('\n')
 print('Standardizing column headers...')
 print('The original column headers are:')
-print(list(df.columns))
+print(list(cleanDF.columns))
 
 logger.info('Standardized column headers')
-new_headers = standardize_headers(df.columns)
+new_headers = standardize_headers(cleanDF.columns)
 print(list(new_headers.values()))
 
 # rename column headers
-df.rename(columns=new_headers, inplace=True)
+cleanDF.rename(columns=new_headers, inplace=True)
 
 # dropping duplicates, if they exist
 if duplicateCount > 0:
@@ -132,31 +134,31 @@ if duplicateCount > 0:
             print('Please restart the program.')
             sys.exit()
 
-    before_drop = len(df)
+    before_drop = len(cleanDF)
     if keeps in ['l', 'last']:
-        df.drop_duplicates(keep='last', inplace=True)
+        cleanDF.drop_duplicates(keep='last', inplace=True)
     else:
-        df.drop_duplicates(inplace=True)
-    afterdrop = before_drop - len(df)
+        cleanDF.drop_duplicates(inplace=True)
+    afterdrop = before_drop - len(cleanDF)
     logger.info(f'{afterdrop} duplicates have been dropped.')
 
 # data types
 shouldBeNumeric = []
-for column in df.columns:
-    if column not in df.select_dtypes(include=np.number).columns.to_list():
+for column in cleanDF.columns:
+    if column not in cleanDF.select_dtypes(include=np.number).columns.to_list():
         try:
-            df[column] = pd.to_numeric(df[column]) # df[column].astype('int')
+            cleanDF[column] = pd.to_numeric(cleanDF[column]) # cleanDF[column].astype('int')
             logger.info(f'{column} has been converted to an integer.')
         except ValueError:
             continue
 
-def checkOutliers(df, column):
-    firstQuartile, thirdQuartile =  np.percentile(df[column], [25,75])
+def checkOutliers(cleanDF, column):
+    firstQuartile, thirdQuartile =  np.percentile(cleanDF[column], [25,75])
     iqr = thirdQuartile - firstQuartile
     lowerBoundary = firstQuartile - (1.5 * iqr)
     upperBoundary = thirdQuartile + (1.5 * iqr)
     # check for outliers
-    outliers = df[(df[column] < lowerBoundary) | (df[column] > upperBoundary)]
+    outliers = cleanDF[(cleanDF[column] < lowerBoundary) | (cleanDF[column] > upperBoundary)]
     outlierCount = len(outliers)
     if outlierCount > 0:
         return True
@@ -165,28 +167,53 @@ def checkOutliers(df, column):
     
 # dropping or imputing nulls
 # get numeric columns
-numericColumns = df.select_dtypes(include= ['int64', 'float64']).columns.to_list()
+numericColumns = cleanDF.select_dtypes(include= ['int64', 'float64']).columns.to_list()
 
 for column in numericColumns:
     # check for nulls
-    nullCount = df[column].isnull().sum()
-    dfLen = len(df)
+    nullCount = cleanDF[column].isnull().sum()
+    cleanDFLen = len(cleanDF)
     if nullCount == 0:
         continue
-    nullPercentage = round((nullCount/dfLen) * 100,2)
+    nullPercentage = round((nullCount/cleanDFLen) * 100,2)
     logger.info(f'There are {nullCount} in the {column} column.')
-    print(f'And these mnake up {nullPercentage} of the values in that column.')
-    nullCmd = input('Would you like to (i)mpute these values or (d)elete them: ')
+    print(f'And these make up {nullPercentage}% of the values in that column.')
+    nullCmd = None
+    nullCmdCount = 0
+    while True:
+        if nullCmd in ['d', 'i']:
+            break
+        if nullCmd is None and nullCmdCount < 3:
+            nullCmd = input('Would you like to (i)mpute these values or (d)elete them: ')
+            nullCmdCount += 1
+        elif nullCmd.lower() not in ['d', 'i'] and nullCmdCount < 3:
+            nullCmd = input("You entered the wrong command. Enter 'i' to impute nulls and 'd' to delete nulls: ")
+            nullCmdCount += 1
+        else:
+            logger.error("Entered wrong command three times.")
+            print('Please restart the program')
+            sys.exit()
+    # drop nulls
     if nullCmd.lower() == 'd':
-        continue
-    time.sleep(0.5)
-    print('Checking for outliers...')
-    time.sleep(0.5)
-    outlierStatus = checkOutliers(df,column)
-    if outlierStatus:
-        imputer = round(np.median(df[column]), 2)
-        logger.info(f'Since there are outliers in the data, nulls will be imputed with the median.')
+        cleanDF = cleanDF.dropna(subset=[column]).reset_index()
+        logger.info(f'{nullCount} nulls dropped in {column} column.')
     else:
-        imputer = round(np.mean(df[column]), 2)
-        logger.info('There are no outliers in the data, so nulls will be imputed with the mean')
-    df[column] = df[column].fillna(imputer)
+        time.sleep(0.5)
+        print('Checking for outliers...')
+        time.sleep(0.5)
+        outlierStatus = checkOutliers(cleanDF,column)
+        if outlierStatus:
+            imputer = round(np.median(cleanDF[column]), 2)
+            logger.info(f'Since there are outliers in the data, nulls will be imputed with the median.')
+        else:
+            imputer = round(np.mean(cleanDF[column]), 2)
+            logger.info('There are no outliers in the data, so nulls will be imputed with the mean')
+        cleanDF[column] = cleanDF[column].fillna(imputer)
+
+
+# save cleaned file to csv in same directory as data
+saveDir = abs_filepath.parent
+fileName = abs_filepath.stem
+saveName = saveDir.joinpath(f'{fileName}-clean.csv')
+cleanDF.to_csv(saveName, index=False)
+logger.info(f'Cleaned csv saved at {saveName}')

@@ -1,10 +1,11 @@
 import sys
-import os
 from pathlib import Path
 import pandas as pd
 import time
 import numpy as np
 import logging
+import logging.config
+import json
 
 # exit program if no argument or more than one is given
 if len(sys.argv) != 2:
@@ -22,33 +23,25 @@ filepath = Path(sys.argv[1])
 abs_filepath = Path(filepath).resolve()
 
 # set up logging
-logger_name = str(abs_filepath)
-logger = logging.getLogger(logger_name)
-logger.setLevel(logging.DEBUG)
+def setup_logging():
+    configFile = Path('logConfig.json')
+    with open(configFile, "r") as file:
+        config = json.load(file)
+    logging.config.dictConfig(config)
 
-# file for logging
+logger_name = str(abs_filepath)
+logger = logging.getLogger()
+logger = logging.LoggerAdapter(logger, {'filepath': str(abs_filepath)})
+# logger.setLevel(logging.DEBUG)
+
+
+# folder for logging
 log_folder = Path('./logs')
 if not log_folder.exists():
     log_folder.mkdir(parents=True, exist_ok=True)
+    logger.info(f'Created logs folder at {log_folder.absolute()}')
     
-log_filepath = log_folder.joinpath('cleanCSV.logs')
-
-# create handler to write logs to file
-file_handler = logging.FileHandler(log_filepath, mode="a", encoding='utf-8')
-# set up file formatter
-file_Formatter = logging.Formatter("%(asctime)s - %(levelname)s - [%(name)s] %(message)s")
-file_handler.setFormatter(file_Formatter)
-
-# create handler to write logs to console
-console_handler = logging.StreamHandler()
-# set up console formatter
-console_formatter = logging.Formatter("%(message)s")
-# add formatter to console handler
-console_handler.setFormatter(console_formatter)
-
-# add handlers to logger
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
+setup_logging()
 
 # check if argument supplied is a csv
 if filepath.suffix != '.csv':
@@ -100,6 +93,7 @@ else:
 nullCols = [column for column in cleanDF.columns if cleanDF[column].isnull().all()]
 if nullCols:
     logger.info(f'The following columns contain only nulls and will be dropped: {nullCols}')
+    cleanDF = cleanDF.drop(columns=nullCols)
 
 # standardize column headers
 def standardize_headers(headers):
@@ -157,7 +151,8 @@ for column in cleanDF.columns:
             continue
 
 def checkOutliers(cleanDF, column):
-    firstQuartile, thirdQuartile =  np.percentile(cleanDF[column], [25,75])
+    colSeries = cleanDF[column].dropna()
+    firstQuartile, thirdQuartile =  np.percentile(colSeries, [25,75])
     iqr = thirdQuartile - firstQuartile
     lowerBoundary = firstQuartile - (1.5 * iqr)
     upperBoundary = thirdQuartile + (1.5 * iqr)
@@ -180,14 +175,14 @@ for column in numericColumns:
     if nullCount == 0:
         continue
     nullPercentage = round((nullCount/cleanDFLen) * 100,2)
-    logger.info(f'There are {nullCount} in the {column} column.')
+    logger.info(f'There are {nullCount} nulls in the {column} column.')
     print(f'And these make up {nullPercentage}% of the values in that column.')
     nullCmd = None
     nullCmdCount = 0
     while True:
         if nullCmd in ['d', 'i']:
             break
-        if nullCmd is None and nullCmdCount < 3:
+        elif nullCmd is None and nullCmdCount < 3:
             nullCmd = input('Would you like to (i)mpute these values or (d)elete them: ')
             nullCmdCount += 1
         elif nullCmd.lower() not in ['d', 'i'] and nullCmdCount < 3:

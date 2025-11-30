@@ -28,11 +28,10 @@ logger.setLevel(logging.DEBUG)
 
 # file for logging
 log_folder = Path('./logs')
-if log_folder.exists():
-    log_filepath = log_folder.joinpath('cleanCSV.logs')
-else:
-    Path.mkdir('./logs')
-    log_filepath = log_folder.joinpath('cleanCSV.logs')
+if not log_folder.exists():
+    log_folder.mkdir(parents=True, exist_ok=True)
+    
+log_filepath = log_folder.joinpath('cleanCSV.logs')
 
 # create handler to write logs to file
 file_handler = logging.FileHandler(log_filepath, mode="a", encoding='utf-8')
@@ -96,6 +95,11 @@ if len(nullColumns) == 0:
 else:
     logger.warning(f'The following columns have null records: {nullColumns}')
     
+
+# drop columns with only nulls
+nullCols = [column for column in cleanDF.columns if cleanDF[column].isnull().all()]
+if nullCols:
+    logger.info(f'The following columns contain only nulls and will be dropped: {nullCols}')
 
 # standardize column headers
 def standardize_headers(headers):

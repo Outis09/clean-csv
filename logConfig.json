@@ -5,9 +5,11 @@
         "console_formatter": {
             "format" : "%(message)s"
         },
-        "file_formatter" : {
-            "format" : "%(asctime)s - %(levelname)s - [%(filepath)s] %(message)s",
-            "datefmt" : "%Y-%m-%d %H:%M:%S"
+        "json_formatter": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format" : "%(asctime)s - %(levelname)s - [%(csvFile)s] %(message)s",
+            "rename_fields" : {"asctime":"time", "levelname":"level"}
+
         }
     },
     "handlers" : {
@@ -20,7 +22,7 @@
         "file" : {
             "class" : "logging.handlers.RotatingFileHandler",
             "level" : "INFO",
-            "formatter" : "file_formatter",
+            "formatter" : "json_formatter",
             "filename" : "logs/cleanCSV.log",
             "maxBytes" : 10485760,
             "backupCount" : 3
